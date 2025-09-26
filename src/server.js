@@ -291,10 +291,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Trigger task endpoint
+// Trigger task endpoint - generates random string and queries database
 app.post('/api/trigger-task', async (req, res) => {
-  let taskInfo = null;
-  
   try {
     console.log('Task triggered at:', new Date().toISOString());
     
@@ -302,48 +300,56 @@ app.post('/api/trigger-task', async (req, res) => {
     const randomString = generateRandomString();
     console.log('Generated random string:', randomString);
     
-    // Start ECS task
-    taskInfo = await runECSTask();
-    console.log('ECS task started successfully:', taskInfo.taskArn);
+    // Simulate some processing time
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
     
-    // Simulate some work (in a real scenario, this would be the actual task processing)
-    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+    // Query database for list of databases
+    let databases = [];
+    if (pool) {
+      try {
+        console.log('Querying database for list of databases...');
+        const query = `
+          SELECT 
+            datname as name,
+            pg_size_pretty(pg_database_size(datname)) as size
+          FROM pg_database 
+          WHERE datistemplate = false 
+            AND datname != 'rdsadmin'
+          ORDER BY datname;
+        `;
+        
+        const result = await pool.query(query);
+        databases = result.rows;
+        console.log('Successfully retrieved', databases.length, 'databases');
+      } catch (dbError) {
+        console.error('Error querying databases:', dbError);
+        // Continue without databases if query fails
+      }
+    } else {
+      console.warn('Database pool not available, returning empty database list');
+    }
+    
+    // Log task completion
+    console.log('Task completed successfully with random string:', randomString);
     
     res.json({
       success: true,
-      message: 'Task triggered and completed successfully',
+      message: 'Task completed successfully',
       randomString: randomString,
-      taskArn: taskInfo.taskArn,
-      taskIP: taskInfo.taskIP,
-      timestamp: new Date().toISOString()
+      databases: databases,
+      databaseCount: databases.length,
+      timestamp: new Date().toISOString(),
+      processingTime: '~2 seconds'
     });
     
-    // Stop the task after responding (fire and forget)
-    setTimeout(async () => {
-      try {
-        await stopECSTask(taskInfo.taskArn, taskInfo.taskIP);
-        console.log('ECS task cleaned up successfully');
-      } catch (cleanupError) {
-        console.error('Error cleaning up ECS task:', cleanupError);
-      }
-    }, 2000); // Wait 2 seconds before cleanup
-    
   } catch (error) {
-    console.error('Error triggering task:', error);
-    
-    // Cleanup on error
-    if (taskInfo) {
-      try {
-        await stopECSTask(taskInfo.taskArn, taskInfo.taskIP);
-      } catch (cleanupError) {
-        console.error('Error cleaning up failed task:', cleanupError);
-      }
-    }
+    console.error('Error processing task:', error);
     
     res.status(500).json({
       success: false,
-      message: 'Failed to trigger task',
-      error: error.message
+      message: 'Failed to process task',
+      error: error.message,
+      databases: []
     });
   }
 });
