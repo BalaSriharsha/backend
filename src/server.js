@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const crypto = require('crypto');
 const { Pool } = require('pg');
 const { ECSClient, RunTaskCommand, StopTaskCommand, DescribeTasksCommand } = require('@aws-sdk/client-ecs');
-const { ELBv2Client, RegisterTargetsCommand, DeregisterTargetsCommand } = require('@aws-sdk/client-elbv2');
+const { ElasticLoadBalancingV2Client, RegisterTargetsCommand, DeregisterTargetsCommand } = require('@aws-sdk/client-elastic-load-balancing-v2');
 const { EC2Client, DescribeNetworkInterfacesCommand } = require('@aws-sdk/client-ec2');
 require('dotenv').config();
 
@@ -33,7 +33,7 @@ let pool;
 
 // Initialize AWS clients
 const ecsClient = new ECSClient({ region: process.env.AWS_REGION || 'us-east-1' });
-const elbClient = new ELBv2Client({ region: process.env.AWS_REGION || 'us-east-1' });
+const elbClient = new ElasticLoadBalancingV2Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const ec2Client = new EC2Client({ region: process.env.AWS_REGION || 'us-east-1' });
 
 // ECS Configuration
