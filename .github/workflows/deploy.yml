@@ -9,7 +9,7 @@ env:
   AWS_REGION: us-east-1
   NODE_VERSION: '18'
   # AWS Resource Values from Terraform Output - Update these with your actual values
-  ECR_REPOSITORY: mediamint-backend
+  ECR_REPOSITORY: mediamint-prod
   ECS_CLUSTER: mediamint-prod-cluster
   ECS_SERVICE: mediamint-backend-service
   ECS_TASK_DEFINITION: mediamint-backend-task
