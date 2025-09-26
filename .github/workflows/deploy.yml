@@ -58,6 +58,16 @@ jobs:
           container-name: mediamint-backend
           image: ${{ steps.build-image.outputs.image }}
 
+      - name: Check if service is active
+        id: check-service
+        run: |
+          SERVICE_STATUS=$(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query 'services[0].status' --output text)
+          echo "Service status: $SERVICE_STATUS"
+          if [ "$SERVICE_STATUS" = "INACTIVE" ]; then
+            echo "Service is inactive, updating desired count to 1"
+            aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --desired-count 1 --task-definition ${{ steps.task-def.outputs.task-definition }} || echo "Failed to update service, will proceed with deployment"
+          fi
+
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
