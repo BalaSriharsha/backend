@@ -37,6 +37,13 @@ console.log('Database configuration:', {
   ssl: dbConfig.ssl
 });
 
+// Validate hostname format
+if (dbConfig.host && dbConfig.host.includes(':')) {
+  console.error('ERROR: DB_HOST contains port number. It should be hostname only.');
+  console.error('Current DB_HOST:', dbConfig.host);
+  console.error('Expected format: hostname.region.rds.amazonaws.com');
+}
+
 let pool;
 
 // Initialize AWS clients
