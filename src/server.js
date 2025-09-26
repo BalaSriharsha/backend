@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 const { ECSClient, RunTaskCommand, StopTaskCommand, DescribeTasksCommand } = require('@aws-sdk/client-ecs');
 const { ElasticLoadBalancingV2Client, RegisterTargetsCommand, DeregisterTargetsCommand } = require('@aws-sdk/client-elastic-load-balancing-v2');
 const { EC2Client, DescribeNetworkInterfacesCommand } = require('@aws-sdk/client-ec2');
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 require('dotenv').config();
 
 const app = express();
@@ -50,6 +51,7 @@ let pool;
 const ecsClient = new ECSClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const elbClient = new ElasticLoadBalancingV2Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const ec2Client = new EC2Client({ region: process.env.AWS_REGION || 'us-east-1' });
+const secretsClient = new SecretsManagerClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
 // ECS Configuration
 const ECS_CLUSTER_NAME = process.env.ECS_CLUSTER_NAME || 'mediamint-prod';
@@ -58,11 +60,47 @@ const TARGET_GROUP_ARN = process.env.TARGET_GROUP_ARN;
 const SUBNET_IDS = process.env.SUBNET_IDS ? process.env.SUBNET_IDS.split(',') : [];
 const SECURITY_GROUP_ID = process.env.SECURITY_GROUP_ID;
 
+// Function to retrieve database password from Secrets Manager
+const getDbPassword = async () => {
+  try {
+    const secretArn = process.env.DB_PASSWORD_SECRET_ARN;
+    if (!secretArn) {
+      console.log('No DB_PASSWORD_SECRET_ARN provided, using environment variable');
+      return process.env.DB_PASSWORD;
+    }
+    
+    console.log('Retrieving database password from Secrets Manager...');
+    const command = new GetSecretValueCommand({
+      SecretId: secretArn
+    });
+    
+    const response = await secretsClient.send(command);
+    const secret = JSON.parse(response.SecretString);
+    
+    console.log('Successfully retrieved database password from Secrets Manager');
+    return secret.password;
+  } catch (error) {
+    console.error('Error retrieving database password from Secrets Manager:', error);
+    console.log('Falling back to environment variable DB_PASSWORD');
+    return process.env.DB_PASSWORD;
+  }
+};
+
 // Initialize database connection
 const initializeDatabase = async () => {
   try {
     console.log('Attempting to connect to database...');
-    pool = new Pool(dbConfig);
+    
+    // Get the database password from Secrets Manager
+    const dbPassword = await getDbPassword();
+    
+    // Create database config with retrieved password
+    const dynamicDbConfig = {
+      ...dbConfig,
+      password: dbPassword
+    };
+    
+    pool = new Pool(dynamicDbConfig);
     
     // Test the connection with timeout
     const client = await pool.connect();
