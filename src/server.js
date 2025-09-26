@@ -19,15 +19,23 @@ app.use(express.json());
 // Database configuration
 const dbConfig = {
   host: process.env.DB_HOST,
-  port: process.env.DB_PORT || 5432,
+  port: parseInt(process.env.DB_PORT) || 5432,
   database: process.env.DB_NAME || 'postgres',
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000,
 };
+
+console.log('Database configuration:', {
+  host: dbConfig.host,
+  port: dbConfig.port,
+  database: dbConfig.database,
+  user: dbConfig.user,
+  ssl: dbConfig.ssl
+});
 
 let pool;
 
@@ -46,16 +54,24 @@ const SECURITY_GROUP_ID = process.env.SECURITY_GROUP_ID;
 // Initialize database connection
 const initializeDatabase = async () => {
   try {
+    console.log('Attempting to connect to database...');
     pool = new Pool(dbConfig);
     
-    // Test the connection
+    // Test the connection with timeout
     const client = await pool.connect();
-    console.log('Connected to PostgreSQL database');
+    console.log('Connected to PostgreSQL database successfully');
+    
+    // Test a simple query
+    const result = await client.query('SELECT NOW()');
+    console.log('Database query test successful:', result.rows[0]);
+    
     client.release();
     
     return true;
   } catch (error) {
     console.error('Database connection error:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error details:', error);
     return false;
   }
 };
