@@ -74,23 +74,73 @@ const getDbPassword = async () => {
     const secretArn = process.env.DB_PASSWORD_SECRET_ARN;
     if (!secretArn) {
       console.log('No DB_PASSWORD_SECRET_ARN provided, using environment variable');
-      return process.env.DB_PASSWORD;
+      const envPassword = process.env.DB_PASSWORD;
+      if (!envPassword) {
+        throw new Error('No password found in environment variables');
+      }
+      return envPassword;
     }
     
     console.log('Retrieving database password from Secrets Manager...');
+    console.log('Secret ARN:', secretArn);
+    
     const command = new GetSecretValueCommand({
       SecretId: secretArn
     });
     
     const response = await secretsClient.send(command);
+    
+    if (!response.SecretString) {
+      throw new Error('SecretString is empty in Secrets Manager response');
+    }
+    
+    console.log('Secret retrieved, parsing JSON...');
     const secret = JSON.parse(response.SecretString);
+    console.log('Secret keys:', Object.keys(secret));
+    
+    // Try different possible password field names
+    const password = secret.password || secret.Password || secret.PGPASSWORD;
+    
+    if (!password) {
+      throw new Error('No password field found in secret. Available fields: ' + Object.keys(secret).join(', '));
+    }
+    
+    if (typeof password !== 'string') {
+      throw new Error(`Password is not a string. Type: ${typeof password}, Value: ${password}`);
+    }
+    
+    // Also check if we need to update the username from the secret
+    const secretUsername = secret.username || secret.Username;
+    if (secretUsername && secretUsername !== process.env.DB_USER) {
+      console.log(`Username from secret (${secretUsername}) differs from environment variable (${process.env.DB_USER})`);
+      console.log('Using username from secret for consistency');
+      // Store the correct username for later use
+      process.env.DB_USER_FROM_SECRET = secretUsername;
+    }
     
     console.log('Successfully retrieved database password from Secrets Manager');
-    return secret.password;
+    return password;
   } catch (error) {
     console.error('Error retrieving database password from Secrets Manager:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      statusCode: error.$metadata?.httpStatusCode
+    });
+    
     console.log('Falling back to environment variable DB_PASSWORD');
-    return process.env.DB_PASSWORD;
+    const envPassword = process.env.DB_PASSWORD;
+    
+    if (!envPassword) {
+      throw new Error('No password available from Secrets Manager or environment variables');
+    }
+    
+    if (typeof envPassword !== 'string') {
+      throw new Error(`Environment password is not a string. Type: ${typeof envPassword}`);
+    }
+    
+    return envPassword;
   }
 };
 
@@ -100,17 +150,40 @@ const initializeDatabase = async () => {
     console.log('Attempting to connect to database...');
     
     // Get the database password from Secrets Manager
+    console.log('Retrieving database password...');
     const dbPassword = await getDbPassword();
     
-    // Create database config with retrieved password
+    if (!dbPassword) {
+      throw new Error('Database password is null or undefined');
+    }
+    
+    if (typeof dbPassword !== 'string') {
+      throw new Error(`Database password is not a string. Type: ${typeof dbPassword}`);
+    }
+    
+    console.log('Password retrieved successfully, creating connection pool...');
+    
+    // Create database config with retrieved password and username from secret if available
     const dynamicDbConfig = {
       ...dbConfig,
-      password: dbPassword
+      password: dbPassword,
+      user: process.env.DB_USER_FROM_SECRET || dbConfig.user
     };
+    
+    // Log config without password for debugging
+    console.log('Database configuration:', {
+      host: dynamicDbConfig.host,
+      port: dynamicDbConfig.port,
+      database: dynamicDbConfig.database,
+      user: dynamicDbConfig.user,
+      ssl: dynamicDbConfig.ssl,
+      passwordSet: !!dynamicDbConfig.password
+    });
     
     pool = new Pool(dynamicDbConfig);
     
     // Test the connection with timeout
+    console.log('Testing database connection...');
     const client = await pool.connect();
     console.log('Connected to PostgreSQL database successfully');
     
