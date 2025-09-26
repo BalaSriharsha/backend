@@ -14,7 +14,15 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://frontend.vittas.in',
+    'https://d3phvmll9t3ee2.cloudfront.net',
+    'http://localhost:5173', // For local development
+    'http://localhost:3000'  // For local development
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
 // Database configuration
