@@ -1,4 +1,4 @@
-name: Deploy Backend to ECR and ECS
+name: Deploy Backend to ECS
 
 on:
   push:
@@ -7,12 +7,12 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  # AWS Resource Values from Terraform Output
-  ECR_REPOSITORY_NAME: mediamint-prod
-  ECS_CLUSTER_NAME: mediamint-prod
-  ECS_SERVICE_NAME: mediamint-prod
-  ECS_TASK_DEFINITION_NAME: mediamint-prod
-  ECS_CONTAINER_NAME: mediamint-backend
+  NODE_VERSION: '18'
+  # AWS Resource Values from Terraform Output - Update these with your actual values
+  ECR_REPOSITORY: mediamint-backend
+  ECS_CLUSTER: mediamint-prod-cluster
+  ECS_SERVICE: mediamint-backend-service
+  ECS_TASK_DEFINITION: mediamint-backend-task
 
 jobs:
   deploy:
@@ -37,44 +37,39 @@ jobs:
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_NAME }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           # Build a docker container and push it to ECR
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Update ECS task definition with new image
+      - name: Download current task definition
         run: |
-          # Get current task definition
           aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_TASK_DEFINITION_NAME }} \
-            --query 'taskDefinition' > current-task-def.json
-          
-          # Update the image in the task definition
-          cat current-task-def.json | \
-          jq --arg IMAGE "${{ steps.build-image.outputs.image }}" \
-          '.containerDefinitions[0].image = $IMAGE' | \
-          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)' \
-          > new-task-def.json
-          
-          # Register new task definition
-          aws ecs register-task-definition \
-            --cli-input-json file://new-task-def.json
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+            --query taskDefinition > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.ECR_REPOSITORY }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
 
       - name: Deployment Summary
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_NAME }}
-          IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "Docker image built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
-          echo "Image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_STEP_SUMMARY
-          echo "ECS task definition updated with new image" >> $GITHUB_STEP_SUMMARY
-          echo "Task Definition: ${{ env.ECS_TASK_DEFINITION_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "Cluster: ${{ env.ECS_CLUSTER_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "Tasks will be triggered on-demand from the frontend" >> $GITHUB_STEP_SUMMARY
+          echo "Backend successfully deployed to ECS" >> $GITHUB_STEP_SUMMARY
+          echo "Docker image: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "ECS Cluster: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+          echo "ECS Service: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
