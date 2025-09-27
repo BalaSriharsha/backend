@@ -4,7 +4,7 @@ const { logger } = require('./logging');
 
 // Configure X-Ray
 if (process.env.NODE_ENV === 'production') {
-  // Enable X-Ray tracing for AWS SDK
+  // Enable X-Ray tracing for AWS SDK v2 (required by X-Ray SDK)
   const aws = AWSXRay.captureAWS(AWS);
   
   // Configure X-Ray daemon
