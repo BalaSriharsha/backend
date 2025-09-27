@@ -19,7 +19,8 @@ app.use(cors({
     'https://frontend.vittas.in',
     'https://d3phvmll9t3ee2.cloudfront.net',
     'http://localhost:5173', // For local development
-    'http://localhost:3000'  // For local development
+    'http://localhost:3000', // For local development
+    'https://d3mdc4iuhybuoe.cloudfront.net' // Current CloudFront domain
   ],
   credentials: true
 }));
